@@ -1,1 +1,16 @@
+# --- Librerie Base (Versioni specifiche per evitare conflitti NumPy 2.x) ---
+numpy==1.26.4
+opencv-python==4.8.0.76
+mediapipe==0.10.11
+
+# --- Calcolo e Utility ---
+scipy==1.12.0
+tqdm==4.66.2
+pandas==2.2.1
+
+# --- Machine Learning (TensorFlow ottimizzato per Mac) ---
+tensorflow==2.15.0
+
+# --- Dataset e Database ---
 kagglehub
+chromadb
