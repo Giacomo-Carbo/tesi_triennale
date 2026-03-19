@@ -1,0 +1,84 @@
+ricerche su dtaset e migliori tipi di modelli utilizzati 
+
+1. ESTRAZIONE E PRE-PROCESSING (MediaPipe & Skeleton)
+
+“Skeleton-based sign language recognition”
+
+“MediaPipe Holistic for sign language gesture recognition”
+
+“Robustness of 2D/3D keypoints in sign language recognition”
+
+“Normalization techniques for hand landmarks in SLR”
+
+“Invariance to background and lighting in skeleton-based SLR”
+
+2. ARCHITETTURA TEMPORALE (LSTM & GRU)
+
+“LSTM vs GRU for dynamic sign language recognition”
+
+“Bi-directional LSTM for word-level sign language recognition”
+
+“Temporal modeling of sign language sequences with RNNs”
+
+“Real-time sign language recognition using MediaPipe and LSTM”
+
+“Vanishing gradient problem in long-sequence sign language recognition”
+
+3. METRIC LEARNING & VECTOR DB (ChromaDB / FAISS)
+
+“Deep Metric Learning for sign language embedding”
+
+“Open-vocabulary sign language recognition”
+
+“Triplet Loss for gesture similarity search”
+
+“Few-shot sign language recognition using prototypical networks”
+
+“Exemplar-based sign language recognition”
+
+“Retrieval-based sign language recognition with vector databases”
+
+“Cross-lingual few-shot sign language recognition” (Rif. Bilge et al. 2024)
+
+4. DATASET E BENCHMARK (WLASL)
+
+“WLASL: Word-level American Sign Language recognition benchmark”
+
+“Evaluation of WLASL dataset using pose-based models”
+
+“State-of-the-art results on WLASL 2000 words”
+
+
+
+https://github.com/asnsams/Video-Sign-Language-Dateset?tab=readme-ov-file
+ 
+ 
+ @inproceedings{li2020word,
+    title={Word-level Deep Sign Language Recognition from Video: A New Large-scale Dataset and Methods Comparison},
+    author={Li, Dongxu and Rodriguez, Cristian and Yu, Xin and Li, Hongdong},
+    booktitle={The IEEE Winter Conference on Applications of Computer Vision},
+    pages={1459--1469},
+    year={2020}
+ }
+
+@article{wu2024towards,
+  title={Towards open vocabulary learning: A survey},
+  author={Wu, Jianzong and Li, Xiangtai and Xu, Shilin and Yuan, Haobo and Ding, Henghui and Yang, Yibo and Li, Xia and Zhang, Jiangning and Tong, Yunhai and Jiang, Xudong and others},
+  journal={IEEE transactions on pattern analysis and machine intelligence},
+  volume={46},
+  number={7},
+  pages={5092--5113},
+  year={2024},
+  publisher={IEEE}
+}
+
+@article{buttar2023deep,
+  title={Deep learning in sign language recognition: a hybrid approach for the recognition of static and dynamic signs},
+  author={Buttar, Ahmed Mateen and Ahmad, Usama and Gumaei, Abdu H and Assiri, Adel and Akbar, Muhammad Azeem and Alkhamees, Bader Fahad},
+  journal={Mathematics},
+  volume={11},
+  number={17},
+  pages={3729},
+  year={2023},
+  publisher={MDPI}
+}
