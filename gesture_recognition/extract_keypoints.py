@@ -46,7 +46,6 @@ def worker_process_video(video_info):
     video_path, output_file, target_length = video_info
     
     mp_holistic = mp.solutions.holistic
-    # Ridotto l'overhead di MediaPipe per processi paralleli
     with mp_holistic.Holistic(static_image_mode=False, min_detection_confidence=0.5) as model:
         cap = cv2.VideoCapture(video_path)
         sequence = []
