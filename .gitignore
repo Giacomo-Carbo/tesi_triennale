@@ -18,3 +18,5 @@ __pycache__/
 .DS_Store
 
 MP_DATA_EMBEDDINGS/
+
+.venv/
