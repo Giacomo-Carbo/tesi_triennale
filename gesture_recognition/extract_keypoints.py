@@ -9,7 +9,8 @@ from scipy import interpolate
 from concurrent.futures import ProcessPoolExecutor
 
 
-DATASET_PATH = kagglehub.dataset_download("risangbaskoro/wlasl-processed")
+#DATASET_PATH = kagglehub.dataset_download("risangbaskoro/wlasl-processed")
+DATASET_PATH = "/Users/giacomocarbonara/.cache/kagglehub/datasets/risangbaskoro/wlasl-processed/versions/5"
 VIDEOS_PATH = os.path.join(DATASET_PATH, "videos")
 METADATA_PATH = os.path.join(DATASET_PATH, "WLASL_v0.3.json") 
 OUTPUT_PATH = "MP_DATA_EMBEDDINGS"
@@ -39,6 +40,17 @@ def resample_sequence(sequence, target_frames=100):
     f = interpolate.interp1d(x_old, sequence, axis=0, kind='linear', fill_value="extrapolate")
     return f(x_new)
 
+#necessaria pk dato che nella piattaforma di learning daraà una specie di finiestra 4 se in cui l'utente potrà fare il
+#gesto se esso dura dimeno l'utnte può bloccare e riempirò di zeri i frame non "utilizzati"
+#quindi se una sequenza è più corta di 100 frame, la riempio con zeri fino a raggiungere i 100 frame richiesti
+
+#pk 4 sec? perche il gesto più lungo dura 4 secondi
+def uniform_lenght(sequence, target_frames=100):
+    current_frames = len(sequence)
+    if current_frames < target_frames: # Protezione per sequenze troppo corte
+        return np.concatenate([sequence, np.zeros((target_frames - current_frames, 1662))], axis=0)
+    return
+
 
 #funzione che processa un singolo video, estrae i keypoints e salva il risultato in un file .npy
 #ho aggironato la funzione per usare il multiporcessing, in modo da processare più video in parallelo e velocizzare l'elaborazione 
@@ -60,14 +72,16 @@ def worker_process_video(video_info):
         cap.release()
         
         if len(sequence) > 0:
-            resampled_data = resample_sequence(sequence, target_frames=target_length)
-            np.save(output_file, resampled_data)
+            #resampled_data = resample_sequence(sequence, target_frames=target_length)
+            #np.save(output_file, resampled_data)
+            np.save(output_file, uniform_lenght(sequence)) #salvo la sequenza originale senza resampling
             return True
     return False
 
 # --- MAIN ---
 
 def main():
+    print("incominciamo o no")
     if not os.path.exists(METADATA_PATH):
         print(f"Errore: Metadati non trovati.")
         return
@@ -98,6 +112,7 @@ def main():
             # Il pool si apre e si chiude per ogni parola
             with ProcessPoolExecutor() as executor:
                 # Esegue i video della parola corrente in parallelo sui core CPU
+                #ho cercato per la GPU ma dovrei scrivere proprio il kernel metal ma è troppo complesso, quindi per ora mi limito alla CPU
                 list(executor.map(worker_process_video, word_tasks))
 
     print("\nElaborazione completata!")
