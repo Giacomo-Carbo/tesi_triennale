@@ -20,3 +20,5 @@ __pycache__/
 MP_DATA_EMBEDDINGS/
 
 .venv/
+dataset/
+testset/

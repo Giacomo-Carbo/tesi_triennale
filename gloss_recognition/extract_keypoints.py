@@ -4,6 +4,7 @@ import mediapipe as mp
 import numpy as np
 import os
 import json
+import sys
 from tqdm import tqdm
 from scipy import interpolate
 from concurrent.futures import ProcessPoolExecutor
@@ -29,8 +30,8 @@ def extract_keypoints(results):
 
 
 #è essenzialmente un interpolazione che viene fatta sui keypoints estratti da media pipe, 
-#in modo da avere sempre 100 frame per ogni video (4 secondi a 25 FPS)
-def resample_sequence(sequence, target_frames=100):
+#in modo da avere sempre 100 frame per ogni video (5 secondi a 25 FPS)
+def resample_sequence(sequence, target_frames=125):
     current_frames = len(sequence)
     if current_frames <= 1: # Protezione per sequenze troppo corte
         return np.zeros((target_frames, 1662))
@@ -40,7 +41,7 @@ def resample_sequence(sequence, target_frames=100):
     f = interpolate.interp1d(x_old, sequence, axis=0, kind='linear', fill_value="extrapolate")
     return f(x_new)
 
-#necessaria pk dato che nella piattaforma di learning daraà una specie di finiestra 4 se in cui l'utente potrà fare il
+#necessaria pk dato che nella piattaforma di learning daraà una specie di finiestra 5 se in cui l'utente potrà fare il
 #gesto se esso dura dimeno l'utnte può bloccare e riempirò di zeri i frame non "utilizzati"
 #quindi se una sequenza è più corta di 100 frame, la riempio con zeri fino a raggiungere i 100 frame richiesti
 
@@ -49,12 +50,14 @@ def uniform_lenght(sequence, target_frames=100):
     current_frames = len(sequence)
     if current_frames < target_frames: # Protezione per sequenze troppo corte
         return np.concatenate([sequence, np.zeros((target_frames - current_frames, 1662))], axis=0)
-    return
+    return None
 
 
 #funzione che processa un singolo video, estrae i keypoints e salva il risultato in un file .npy
 #ho aggironato la funzione per usare il multiporcessing, in modo da processare più video in parallelo e velocizzare l'elaborazione 
 def worker_process_video(video_info):
+    sys.stdout = open(os.devnull, 'w')
+    sys.stderr = open(os.devnull, 'w')
     video_path, output_file, target_length = video_info
     
     mp_holistic = mp.solutions.holistic
@@ -70,11 +73,11 @@ def worker_process_video(video_info):
             sequence.append(extract_keypoints(results))
             
         cap.release()
-        
-        if len(sequence) > 0:
+        sequence = uniform_lenght(sequence)
+        if (sequence is not None) and (len(sequence) > 0):
             #resampled_data = resample_sequence(sequence, target_frames=target_length)
             #np.save(output_file, resampled_data)
-            np.save(output_file, uniform_lenght(sequence)) #salvo la sequenza originale senza resampling
+            np.save(output_file, ) #salvo la sequenza originale senza resampling
             return True
     return False
 
