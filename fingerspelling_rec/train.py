@@ -29,7 +29,7 @@ print(f"Dataset alfabeto in: {DATASET_ALPAHBET}")
 DATASET_DIR = Path("dataset")
 TESTSET_NUMBERS = Path(kagglehub.dataset_download("lexset/synthetic-asl-numbers")) / "Test_Nums"
 TESTSET_ALPAHBET = Path(kagglehub.dataset_download("grassknoted/asl-alphabet")) / "asl_alphabet_test/asl_alphabet_test"
-
+TESTSET_DIR = Path("testset")
 MODEL_DIR = Path("gesture_model")
 MODEL_NAME = "asl_gesture_classifier3.task"
 EPOCH_NUM = 80
@@ -210,7 +210,7 @@ def save_model(model):
 
 
 # ==============================
-# TEST DEL MODELLO (INFERENZA)
+# TEST DEL MODELLO 
 # ==============================
 
 def test_model(model_path):
@@ -294,7 +294,6 @@ if __name__ == "__main__":
     print("\nAvvio\n")
     check_gpu()
     merge_datasets([DATASET_NUMBERS, DATASET_ALPAHBET], DATASET_DIR)
-    merge_datasets([TESTSET_NUMBERS, TESTSET_ALPAHBET], TESTSET_DIR)
     validate_and_fix_dataset()
     train_data, validation_data = load_dataset()
     model = train_model(train_data, validation_data)
@@ -302,6 +301,23 @@ if __name__ == "__main__":
     #print(f"\n\n\n\n\nLoss sul test set: {loss}, Accuratezza sul test set: {acc}\n\n\n\n\n\n")
 
     saved_path = save_model(model)
+
+
+
+    #modifica e creazione cartella di test
+    for f in TESTSET_NUMBERS.iterdir():
+        if f.is_dir():
+           for img in f.iterdir():
+               if img.is_file():
+                   target_dir = TESTSET_DIR / f.name
+                   target_dir.mkdir(exist_ok=True)
+                   shutil.copy2(img, target_dir / img.name)
+    
+    for img in TESTSET_ALPAHBET.iterdir():
+        if img.is_file():
+            target_dir = TESTSET_DIR / img.name
+            target_dir.mkdir(exist_ok=True)
+            shutil.copy2(img, target_dir / img.name)
 
     # Test di inferenza reale su file esterni
     if TESTSET_DIR.exists():
