@@ -145,7 +145,7 @@ def load_dataset():
         hparams=gesture_recognizer.HandDataPreprocessingParams()
     )
 
-    train_data, validation_test_data = data.split(0.8)
+    train_data, validation_data = data.split(0.8)
     print(f"📊 Dati caricati. Addestramento: {len(train_data)}, Validazione: {len(validation_data)}")
 
     return train_data, validation_data
