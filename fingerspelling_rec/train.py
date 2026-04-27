@@ -146,7 +146,6 @@ def load_dataset():
     )
 
     train_data, validation_test_data = data.split(0.8)
-    validation_data, test_data = validation_test_data.split(0.5)
     print(f"📊 Dati caricati. Addestramento: {len(train_data)}, Validazione: {len(validation_data)}")
 
     return train_data, validation_data
