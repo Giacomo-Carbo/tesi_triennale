@@ -1,155 +1,124 @@
-# Per utilizzare, creare un ambiente virtuale con Python 3.11
-# con i seguenti comandi:
-#
-# python3.11 -m venv .venv
-# source venv/bin/activate
-# pip install -r requirements.txt
-# pip install -r requirements_model_maker.txt --no-deps
-
 import os
-from pathlib import Path
-import kagglehub
+import shutil
 import cv2
+import kagglehub
+import tensorflow as tf
 import mediapipe as mp
+import matplotlib.pyplot as plt
+from pathlib import Path
+from tqdm import tqdm
 from mediapipe_model_maker import gesture_recognizer
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import tensorflow as tf
-import shutil
-
+import random
+from PIL import Image
 # ==============================
 # CONFIGURAZIONE
 # ==============================
-DATASET_NUMBERS = Path(kagglehub.dataset_download("lexset/synthetic-asl-numbers")) / "Train_Nums"
-print(f"Dataset numeri in: {DATASET_NUMBERS}")
-DATASET_ALPAHBET = Path(kagglehub.dataset_download("grassknoted/asl-alphabet")) / "asl_alphabet_train/asl_alphabet_train"
-print(f"Dataset alfabeto in: {DATASET_ALPAHBET}")
 DATASET_DIR = Path("dataset")
-TESTSET_NUMBERS = Path(kagglehub.dataset_download("lexset/synthetic-asl-numbers")) / "Test_Nums"
-TESTSET_ALPAHBET = Path(kagglehub.dataset_download("grassknoted/asl-alphabet")) / "asl_alphabet_test/asl_alphabet_test"
 TESTSET_DIR = Path("testset")
 MODEL_DIR = Path("gesture_model")
+EXPORT_DIR = Path("exported_model")
 MODEL_NAME = "asl_gesture_classifier3.task"
-EPOCH_NUM = 80
+
+# Scaricamento dataset
+DATASET_NUMBERS = Path(kagglehub.dataset_download("lexset/synthetic-asl-numbers")) / "Train_Nums"
+DATASET_ALPAHBET = Path(kagglehub.dataset_download("grassknoted/asl-alphabet")) / "asl_alphabet_train/asl_alphabet_train"
+TESTSET_NUMBERS_SRC = Path(kagglehub.dataset_download("lexset/synthetic-asl-numbers")) / "Test_Nums"
+TESTSET_ALPAHBET_SRC = Path(kagglehub.dataset_download("grassknoted/asl-alphabet")) / "asl_alphabet_test/asl_alphabet_test"
+print(TESTSET_NUMBERS_SRC)
+MAX_IMAGES_PER_CLASS = 2000
+EPOCH_NUM = 140
+BATCH_SIZE = 128
 
 # ==============================
 # FUNZIONI DI UTILITÀ
 # ==============================
 def check_gpu():
-    """Controlla la presenza di GPU e stampa lo stato."""
-    print("Verifica della configurazione hardware...")
+    print("\n🔍 Verifica hardware...")
     gpus = tf.config.list_physical_devices('GPU')
     if gpus:
-        print("✅ GPU trovata. TensorFlow la utilizzerà per l'addestramento.")
-        for gpu in gpus:
-            print(f"  - Dispositivo: {gpu.name}")
+        print(f"✅ GPU trovata: {gpus[0].name}")
     else:
-        print("⚠️ Nessuna GPU trovata. TensorFlow utilizzerà la CPU.")
-        print("Per l'accelerazione su Mac, installa 'tensorflow-metal' con: pip install tensorflow-metal")
+        print("⚠️ GPU non trovata, uso della CPU.")
     print("-" * 30)
 
+def merge_datasets(src_folders, dest_folder):
+    dest_folder = Path(dest_folder)
+    if dest_folder.exists() and any(dest_folder.iterdir()):
+        print("✅ Dataset già unito. Salto il passaggio.")
+        return
 
+    dest_folder.mkdir(parents=True, exist_ok=True)
+    for src in tqdm(src_folders, desc="Unione Dataset", unit="folder"):
+        src_path = Path(src)
+        if not src_path.exists(): continue
+        list = [item for item in src_path.iterdir() if item.is_dir()]
+        for item in tqdm(list, desc=f"Copiando da {src_path.name}", unit="img"):
+            if item.is_dir():
+                target_dir = dest_folder / item.name
+                target_dir.mkdir(parents=True, exist_ok=True)
+                for file in item.iterdir():
+                    if file.is_file():
+                        shutil.copy2(file, target_dir / file.name)
 
-
-# ==============================
-# CORREZIONE E VALIDAZIONE DEL DATASET
-# ==============================
 def validate_and_fix_dataset():
-    """
-    Valida la struttura e l'integrità del dataset.
-    - Rinomina la directory 'Nothing' e 'Blank' in 'None'.
-    - Rimuove i file nascosti (come .DS_Store).
-    - Controlla e rimuove le immagini corrotte.
-    """
+    print("🧹 Validazione e pulizia immagini...")
+    none_dir = DATASET_DIR / "None"
+    none_dir.mkdir(parents=True, exist_ok=True)
 
-    print("🧹 Pulizia e verifica delle immagini...")
+    # Unifica classi vuote in 'None' per MediaPipe
+    for old_name in ["Nothing", "Blank", "nothing", "blank"]:
+        old_dir = DATASET_DIR / old_name
+        if old_dir.exists():
+            for file in old_dir.iterdir():
+                target = none_dir / file.name
+                if not target.exists():
+                    shutil.move(str(file), str(target))
+                else:
+                    os.remove(file)
+            shutil.rmtree(old_dir)
+
+    # Rimuove file corrotti e nascosti
+    valid_ext = {'.jpg', '.jpeg', '.png', '.bmp'}
+    all_files = [Path(r)/f for r, d, fs in os.walk(DATASET_DIR) for f in fs]
     
-    # Definizione percorsi
-    nothing = DATASET_DIR / "Nothing"
-    blank = DATASET_DIR / "Blank"
-    none = DATASET_DIR / "none"
+    for f in tqdm(all_files, desc="Verifica integrità", unit="img"):
+        if f.name.startswith(".") or f.suffix.lower() not in valid_ext:
+            os.remove(f)
+            continue
+        img = cv2.imread(str(f))
+        if img is None:
+            os.remove(f)
 
-    # CREAZIONE CARTELLA TARGET (Cruciale per evitare FileNotFoundError)
-    none.mkdir(exist_ok=True)
+def prepare_testset():
+    """Organizza il testset prendendo tutte le immagini dell'alfabeto e 1 per numero."""
+    if TESTSET_DIR.exists(): return
+    TESTSET_DIR.mkdir(parents=True, exist_ok=True)
+    print("🧪 Preparazione testset...")
 
-    # Funzione interna per evitare ripetizioni di codice
-    def merge_into_none(src_dir):
-        if src_dir.exists() and src_dir.is_dir():
-            print(f"Spostamento file da {src_dir.name} a None...")
-            for file in src_dir.iterdir():
-                if file.is_file():
-                    target_path = none / file.name
-                    if target_path.exists():
-                        # Se il file esiste già in 'None', lo eliminiamo dalla sorgente
-                        os.remove(file)
-                    else:
-                        shutil.move(str(file), str(target_path))
-            # Rimuove la cartella sorgente ormai vuota
-            shutil.rmtree(src_dir)
+    # Alfabeto (tutte)
+    for img in TESTSET_ALPAHBET_SRC.glob("*.jpg"):
+        class_name = img.stem.split('_')[0]
+        shutil.copy2(img, TESTSET_DIR / img.name)
 
-    # Esecuzione unione cartelle
-    merge_into_none(nothing)
-    merge_into_none(blank)
-
-    # Pulizia file nascosti e raccolta immagini
-    image_extensions = {'.jpg', '.jpeg', '.png', '.bmp'}
-    files_to_check = []
-
-    for root, dirs, files in os.walk(DATASET_DIR):
-        for f in files:
-            file_path = Path(root) / f
-            # Rimuove file nascosti (es. .DS_Store)
-            if f.startswith("."):
-                os.remove(file_path)
-            elif file_path.suffix.lower() in image_extensions:
-                files_to_check.append(file_path)
-
-    # Verifica integrità immagini
-    valid_count = 0
-    removed_count = 0
-
-    print(f"🔍 Analisi di {len(files_to_check)} immagini...")
-    for file_path in tqdm(files_to_check, desc="Validazione Dataset", unit="img"):
-        try:
-            img = cv2.imread(str(file_path))
-            if img is None:
-                os.remove(file_path)
-                removed_count += 1
-            else:
-                valid_count += 1
-        except Exception as e:
-            print(f"\nErrore con {file_path.name}: {e}. Rimosso.")
-            if file_path.exists():
-                os.remove(file_path)
-            removed_count += 1
-
-    print(f"\n✅ Validazione completata: {valid_count} immagini valide, {removed_count} rimosse.\n")
-
-
-
-
+    # Numeri (1 per cartella)
+    for d in TESTSET_NUMBERS_SRC.iterdir():
+        if d.is_dir():
+            files = [f for f in d.iterdir() if f.is_file()]
+            f = random.choice(files)
+            shutil.copy2(f, TESTSET_DIR / (d.name+".png"))
+            convert_png_to_jpg(TESTSET_DIR / (d.name+".png"), TESTSET_DIR / (d.name+".jpg"))
 # ==============================
-# CARICAMENTO DEL DATASET
+# CORE: TRAINING & INFERENZA
 # ==============================
-
-def load_dataset():
-    """
-    Carica il dataset utilizzando MediaPipe Model Maker e lo divide in set di addestramento, validazione e test
-    """
-    print("📚 Caricamento dati in MediaPipe Model Maker...")
-    # Nota: from_folder non supporta una barra di avanzamento, ma abbiamo già convalidato i file.
+def load_data():
+    print("📚 Caricamento dati...")
     data = gesture_recognizer.Dataset.from_folder(
         dirname=str(DATASET_DIR),
         hparams=gesture_recognizer.HandDataPreprocessingParams()
     )
-
-    train_data, validation_data = data.split(0.8)
-    print(f"📊 Dati caricati. Addestramento: {len(train_data)}, Validazione: {len(validation_data)}")
-
-    return train_data, validation_data
-
+    return data.split(0.9)
 
 # ==============================
 # ADDESTRAMENTO DEL MODELLO
@@ -162,166 +131,101 @@ def train_model(train_data, validation_data):
     print("🏋️‍♂️ Inizio dell'addestramento del modello...")
 
     hparams = gesture_recognizer.HParams(
-        epochs=EPOCH_NUM,
-        batch_size=128,
-        learning_rate=0.005,
-        export_dir="exported_model"
+    epochs=EPOCH_NUM,
+    batch_size=128,
+    learning_rate=0.005,
+    export_dir="exported_model"
     )
 
     model_options = gesture_recognizer.ModelOptions(dropout_rate=0.05)
 
     options = gesture_recognizer.GestureRecognizerOptions(
-        model_options=model_options,
-        hparams=hparams
+    model_options=model_options,
+    hparams=hparams
     )
 
     model = gesture_recognizer.GestureRecognizer.create(
-        train_data=train_data,
-        validation_data=validation_data,
-        options=options
+    train_data=train_data,
+    validation_data=validation_data,
+    options=options
     )
 
     print("🏁 Addestramento completato!")
     return model
 
-
-# ==============================
-# ESPORTAZIONE DEL MODELLO
-# ==============================
-
-def save_model(model):
-    """
-    Esporta il modello
-    """
-    MODEL_DIR.mkdir(exist_ok=True)
-    model_path = MODEL_DIR / MODEL_NAME
-
-    # export_model salva anche i metadati necessari.
-    model.export_model(model_name=MODEL_NAME)
-
-    # Sposta il file nella nostra cartella desiderata per coerenza.
-    source_path = Path("exported_model") / MODEL_NAME
-    if source_path.exists():
-        shutil.move(str(source_path), str(model_path))
-
-    print(f"💾 Modello salvato in: {model_path}")
-    return model_path
-
-
-# ==============================
-# TEST DEL MODELLO 
-# ==============================
-
 def test_model(model_path):
-    """
-    Testa il modello esportato
-    """
-    print("\n🧪 Inizio del test del modello con l'API MediaPipe Tasks...")
-
-    # Configurazione di BaseOptions per l'inferenza
+    print(f"\n🧪 Test inferenza su: {model_path}")
     base_options = python.BaseOptions(model_asset_path=str(model_path))
     options = vision.GestureRecognizerOptions(base_options=base_options)
-
-    # Crea il riconoscitore
     recognizer = vision.GestureRecognizer.create_from_options(options)
 
-    test_files = [f for f in TESTSET_DIR.iterdir() if f.suffix.lower() in ['.jpg', '.png', '.jpeg']]
 
-    print(f"Test su {len(test_files)} immagini di test...")
-
-    for image_path in test_files:
-        # Carica l'immagine come oggetto MediaPipe Image
-        mp_image = mp.Image.create_from_file(str(image_path))
-
-        # Esegui il riconoscimento
-        recognition_result = recognizer.recognize(mp_image)
-
-        top_gesture = "None"
-        score = 0.0
-
-        if recognition_result.gestures:
-            top_gesture = recognition_result.gestures[0][0].category_name
-            score = recognition_result.gestures[0][0].score
-
-        print(f"File: {image_path.name} -> Predizione: {top_gesture} (Punteggio: {score:.2f})")
+    test_images = list(TESTSET_DIR.rglob("*.jpg"))
+    for img_path in test_images:
+        mp_image = mp.Image.create_from_file(str(img_path))
+        res = recognizer.recognize(mp_image)
+        label = res.gestures[0][0].category_name if res.gestures else "None"
+        print(f"File: {img_path.name} -> Predizione: {label}")
 
 
 
 
-
-
-
-#==============================
-# UNIONE DEI DATASET
-#==============================
-def merge_datasets(src_folders, dest_folder):
-    dest_folder = Path(dest_folder)
-    dest_folder.mkdir(parents=True, exist_ok=True)
-
+def limit_images_per_folder(dataset_path, max_images):
+    """
+    Mantiene al massimo 'max_images' in ogni sottocartella, eliminando il resto.
+    """
+    dataset_path = Path(dataset_path)
     
-    for src in tqdm(src_folders, desc="Elaborazione sorgenti", unit="folder"):
-        src_path = Path(src)
-        
-        if not src_path.exists():
-            print(f"Avviso: {src} non trovato.")
-            continue
+    print(f"✂️ Ridimensionamento classi a max {max_images} immagini...")
 
-        # Scorre tutte le sottocartelle (classi A, B, C...)
-        subdirs = [d for d in src_path.iterdir() if d.is_dir()]
-        
-        for item in subdirs:
-            target_dir = dest_folder / item.name
-            target_dir.mkdir(exist_ok=True)
+    for category_dir in dataset_path.iterdir():
+        if category_dir.is_dir():
+            # Lista tutti i file immagine nella cartella
+            images = [f for f in category_dir.iterdir() if f.is_file() and not f.name.startswith('.')]
             
-            # Lista dei file per conoscere il totale e alimentare tqdm
-            files = [f for f in item.iterdir() if f.is_file()]
-            
-            # Barra interna per il monitoraggio dei singoli file
-            desc_file = f"Copia classe {item.name}"
-            for file in tqdm(files, desc=desc_file, unit="file", leave=False):
-                shutil.copy2(file, target_dir / file.name)
+            if len(images) > max_images:
+                # Mescola la lista per rimuovere file casuali
+                random.shuffle(images)
+                
+                # Seleziona i file da eliminare
+                to_delete = images[max_images:]
+                
+                for file in to_delete:
+                    file.unlink() # Elimina il file
+                
+                print(f"✅ Classe {category_dir.name}: rimosse {len(to_delete)} immagini.")
+
+
+def convert_png_to_jpg(input_path, output_path):
+    # Apri l'immagine PNG
+    img = Image.open(input_path)
     
-    print(f"\nUnione completata in: {dest_folder}")
-
-
-
+    # Se l'immagine è in modalità RGBA (ha la trasparenza), 
+    # dobbiamo convertirla in RGB prima di salvarla come JPG
+    if img.mode in ("RGBA", "P"):
+        img = img.convert("RGB")
+    
+    # Salva come JPG con la qualità desiderata (da 1 a 100)
+    img.save(output_path, "JPEG", quality=95)
+    print(f"✅ Convertito: {output_path}")
 # ==============================
-# PIPELINE PRINCIPALE
+# MAIN PIPELINE
 # ==============================
-
 if __name__ == "__main__":
-    print("\nAvvio\n")
     check_gpu()
     merge_datasets([DATASET_NUMBERS, DATASET_ALPAHBET], DATASET_DIR)
+    limit_images_per_folder(DATASET_DIR, MAX_IMAGES_PER_CLASS)
     validate_and_fix_dataset()
-    train_data, validation_data = load_dataset()
-    model = train_model(train_data, validation_data)
-    #loss, acc = model.evaluate(test_data, batch_size=1)
-    #print(f"\n\n\n\n\nLoss sul test set: {loss}, Accuratezza sul test set: {acc}\n\n\n\n\n\n")
-
-    saved_path = save_model(model)
-
-
-
-    #modifica e creazione cartella di test
-    for f in TESTSET_NUMBERS.iterdir():
-        if f.is_dir():
-           for img in f.iterdir():
-               if img.is_file():
-                   target_dir = TESTSET_DIR / f.name
-                   target_dir.mkdir(exist_ok=True)
-                   shutil.copy2(img, target_dir / img.name)
+    prepare_testset()
     
-    for img in TESTSET_ALPAHBET.iterdir():
-        if img.is_file():
-            target_dir = TESTSET_DIR / img.name
-            target_dir.mkdir(exist_ok=True)
-            shutil.copy2(img, target_dir / img.name)
-
-    # Test di inferenza reale su file esterni
-    if TESTSET_DIR.exists():
-       test_model(saved_path)
-    else:
-      print("⚠️ Cartella di test non trovata, salto dell'inferenza.")
-
-    print("\nsuccesso!\n")
+    train_data, val_data = load_data()
+    model = train_model(train_data, val_data)
+    
+    # Esportazione
+    MODEL_DIR.mkdir(parents=True, exist_ok=True)
+    model.export_model(model_name=MODEL_NAME)
+    final_path = MODEL_DIR / MODEL_NAME
+    shutil.move(str(EXPORT_DIR / MODEL_NAME), str(final_path))
+    
+    print(f"💾 Modello finale salvato in: {final_path}")
+    test_model(final_path)
