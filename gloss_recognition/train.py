@@ -37,7 +37,7 @@ class SignTripletGenerator(tf.keras.utils.Sequence):
         self.glosse = [g for g in self.glosse if len(self.gloss_to_files[g]) >= 2]
 
     def __len__(self):
-        return 100 # Batch per epoca
+        return BATCH_SIZE # Batch per epoca
 
     def __getitem__(self, index):
         anchors, positives, negatives = [], [], []

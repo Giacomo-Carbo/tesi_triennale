@@ -21,11 +21,32 @@ if not os.path.exists(OUTPUT_PATH):
 
 #uso media pipe per estrarre i keypoints da ogni video, e li concateno in un singolo array 
 #in oltre se in quel determinato frame non vengono rilevati keypoints, inserisco un array di zeri
+#la funzione extract_keypoints estrae i keypoints da un singolo frame, centrando le coordinate rispetto al naso (se rilevato)
+#in modo da rendere il modello più robusto a variazioni di posizione e distanza dell'utente rispetto alla camera
 def extract_keypoints(results):
-    pose = np.array([[res.x, res.y, res.z, res.visibility] for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(33*4) #33 punti * 4 valori (x,y,z,visibilità)
-    face = np.array([[res.x, res.y, res.z] for res in results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(468*3) #468 punti * 3 valori (x,y,z)
-    lh = np.array([[res.x, res.y, res.z] for res in results.left_hand_landmarks.landmark]).flatten() if results.left_hand_landmarks else np.zeros(21*3) #21 punti * 3 valori (x,y,z)
-    rh = np.array([[res.x, res.y, res.z] for res in results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(21*3) # 21 punti * 3 valori (x,y,z)
+    # 1. Estraiamo il riferimento (Naso) se disponibile
+    # Il naso è il landmark 0 nella posa.
+    if results.pose_landmarks:
+        ref_x = results.pose_landmarks.landmark[0].x
+        ref_y = results.pose_landmarks.landmark[0].y
+    else:
+        ref_x, ref_y = 0, 0
+
+    # 2. Estrazione con sottrazione del riferimento (Centratura)
+    # Sottraiamo ref_x dalle coordinate x (indice 0) e ref_y dalle coordinate y (indice 1)
+    
+    pose = np.array([[res.x - ref_x, res.y - ref_y, res.z, res.visibility] 
+                     for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(33*4)
+    
+    face = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
+                     for res in results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(468*3)
+    
+    lh = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
+                   for res in results.left_hand_landmarks.landmark]).flatten() if results.left_hand_landmarks else np.zeros(21*3)
+    
+    rh = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
+                   for res in results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(21*3)
+    
     return np.concatenate([pose, face, lh, rh])
 
 
@@ -46,10 +67,21 @@ def resample_sequence(sequence, target_frames=125):
 #quindi se una sequenza è più corta di 100 frame, la riempio con zeri fino a raggiungere i 100 frame richiesti
 #pk 4 sec? perche il gesto più lungo dura 4 secondi
 def uniform_lenght(sequence, target_frames=100):
-    current_frames = len(sequence)
-    if current_frames < target_frames: # Protezione per sequenze troppo corte
-        return np.concatenate([sequence, np.zeros((target_frames - current_frames, 1662))], axis=0)
-    return None
+    sequence = np.array(sequence)
+    
+    # Gestione dimensioni per evitare il ValueError precedente
+    if sequence.ndim == 1:
+        sequence = sequence.reshape(-1, 1662) if sequence.size > 0 else np.empty((0, 1662))
+            
+    current_frames = sequence.shape[0]
+    
+    # Se il video è troppo lungo, lo scartiamo restituendo None
+    if current_frames > target_frames:
+        return None
+
+    # Se è più corto, facciamo padding con zeri
+    padding = np.zeros((target_frames - current_frames, 1662))
+    return np.concatenate([sequence, padding], axis=0)
 
 
 #funzione che processa un singolo video, estrae i keypoints e salva il risultato in un file .npy
@@ -83,39 +115,35 @@ def worker_process_video(video_info):
 # --- MAIN ---
 
 def main():
-    print("incominciamo o no")
-    if not os.path.exists(METADATA_PATH):
-        print(f"Errore: Metadati non trovati.")
-        return
-
+    print("Inizializzazione processo...")
     with open(METADATA_PATH, "r") as f:
         metadata = json.load(f)
 
-    # Iteriamo parola per parola (SEQUENZIALE)
-    for entry in tqdm(metadata, desc="Avanzamento Parole"):
+    # 1. Raccogliamo TUTTI i task di tutti i video prima di iniziare
+    all_tasks = []
+    for entry in metadata:
         gloss = entry['gloss']
         gloss_dir = os.path.join(OUTPUT_PATH, gloss)
-        
         if not os.path.exists(gloss_dir):
             os.makedirs(gloss_dir)
             
-        # Prepariamo i task solo per i video di questa specifica parola
-        word_tasks = []
         for instance in entry['instances']:
             video_id = instance['video_id']
             video_path = os.path.join(VIDEOS_PATH, f"{video_id}.mp4")
             output_file = os.path.join(gloss_dir, f"{video_id}.npy")
             
             if os.path.exists(video_path) and not os.path.exists(output_file):
-                word_tasks.append((video_path, output_file, 100))
+                all_tasks.append((video_path, output_file, 100))
 
-        # Se ci sono video da processare per questa parola, usiamo il parallelismo
-        if word_tasks:
-            # Il pool si apre e si chiude per ogni parola
-            with ProcessPoolExecutor() as executor:
-                # Esegue i video della parola corrente in parallelo sui core CPU
-                #ho cercato per la GPU ma dovrei scrivere proprio il kernel metal ma è troppo complesso, quindi per ora mi limito alla CPU
-                list(executor.map(worker_process_video, word_tasks))
+    # 2. Avviamo un UNICO Pool di processi per tutto il dataset
+    # Su M4 Pro posso spingermi ad usare un numero di worker pari ai core (es. 10 o 12)
+    print(f"Totale video da processare: {len(all_tasks)}")
+    
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+        # Usiamo tqdm per vedere l'avanzamento globale reale
+        list(tqdm(executor.map(worker_process_video, all_tasks), 
+                  total=len(all_tasks), 
+                  desc="Elaborazione Globale"))
 
     print("\nElaborazione completata!")
 
