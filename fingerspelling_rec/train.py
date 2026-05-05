@@ -214,7 +214,7 @@ def convert_png_to_jpg(input_path, output_path):
 if __name__ == "__main__":
     check_gpu()
     merge_datasets([DATASET_NUMBERS, DATASET_ALPAHBET], DATASET_DIR)
-    limit_images_per_folder(DATASET_DIR, MAX_IMAGES_PER_CLASS)
+    #limit_images_per_folder(DATASET_DIR, MAX_IMAGES_PER_CLASS)
     validate_and_fix_dataset()
     prepare_testset()
     

@@ -13,4 +13,4 @@ tensorflow==2.15.0
 
 # --- Dataset e Database ---
 kagglehub
-chromadb
+qdrant_client

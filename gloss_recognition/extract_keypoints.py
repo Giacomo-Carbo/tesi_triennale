@@ -41,10 +41,9 @@ def resample_sequence(sequence, target_frames=125):
     f = interpolate.interp1d(x_old, sequence, axis=0, kind='linear', fill_value="extrapolate")
     return f(x_new)
 
-#necessaria pk dato che nella piattaforma di learning daraà una specie di finiestra 5 se in cui l'utente potrà fare il
+#necessaria pk dato che nella piattaforma di learning dara una specie di finiestra 5 sec in cui l'utente potrà fare il
 #gesto se esso dura dimeno l'utnte può bloccare e riempirò di zeri i frame non "utilizzati"
 #quindi se una sequenza è più corta di 100 frame, la riempio con zeri fino a raggiungere i 100 frame richiesti
-
 #pk 4 sec? perche il gesto più lungo dura 4 secondi
 def uniform_lenght(sequence, target_frames=100):
     current_frames = len(sequence)
@@ -77,7 +76,7 @@ def worker_process_video(video_info):
         if (sequence is not None) and (len(sequence) > 0):
             #resampled_data = resample_sequence(sequence, target_frames=target_length)
             #np.save(output_file, resampled_data)
-            np.save(output_file, ) #salvo la sequenza originale senza resampling
+            np.save(output_file, sequence) #salvo la sequenza originale senza resampling
             return True
     return False
 

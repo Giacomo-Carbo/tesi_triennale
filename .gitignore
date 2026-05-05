@@ -18,7 +18,8 @@ __pycache__/
 .DS_Store
 
 MP_DATA_EMBEDDINGS/
-
+exported_model/
 .venv/
 dataset/
 testset/
+qdrant_storage/
