@@ -14,3 +14,4 @@ tensorflow==2.15.0
 # --- Dataset e Database ---
 kagglehub
 qdrant_client
+tensorflowjs

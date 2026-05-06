@@ -157,7 +157,7 @@ def main():
     # Su M4 Pro posso spingermi ad usare un numero di worker pari ai core (es. 10 o 12) (os.cpu_count() per dinamicamente)
     print(f"Totale video da processare: {len(all_tasks)}")
     
-    with ProcessPoolExecutor(max_workers=3) as executor:
+    with ProcessPoolExecutor(max_workers=4) as executor:
         # Usiamo tqdm per vedere l'avanzamento globale reale
         list(tqdm(executor.map(worker_process_video, all_tasks), 
                   total=len(all_tasks), 
