@@ -4,13 +4,13 @@ import tensorflow as tf
 from qdrant_client import QdrantClient
 from qdrant_client.models import PointStruct, VectorParams, Distance
 import uuid 
-
+from tqdm import tqdm
 # --- 1. CONFIGURAZIONE ---
 client = QdrantClient(url="http://localhost:6333")
 MODEL_PATH = "final_lstm_encoder.h5"
 DATA_PATH = "MP_DATA_EMBEDDINGS"
 COLLECTION_NAME = "gloss"
-BATCH_SIZE = 100  
+BATCH_SIZE = 500  
 
 # Creazione collezione (con controllo se esiste già)
 if not client.collection_exists(COLLECTION_NAME):
@@ -33,11 +33,10 @@ print(f"Inizio indicizzazione in Qdrant (Batch Size: {BATCH_SIZE})...\n\n")
 current_batch = []
 total_count = 0
 
-for gloss in os.listdir(DATA_PATH):
+for gloss in tqdm(os.listdir(DATA_PATH), desc="Gloss", unit="gloss"):
     gloss_dir = os.path.join(DATA_PATH, gloss)
     if not os.path.isdir(gloss_dir): continue
     
-    print(f"Processando gloss: {gloss}")
     for file_name in os.listdir(gloss_dir):
         if not file_name.endswith(".npy"): continue
         
@@ -58,7 +57,6 @@ for gloss in os.listdir(DATA_PATH):
             if len(current_batch) >= BATCH_SIZE:
                 client.upsert(collection_name=COLLECTION_NAME, points=current_batch)
                 total_count += len(current_batch)
-                print(f"✅ Inviati {total_count} vettori...")
                 current_batch = [] # Svuota il batch
                 
         except Exception as e:
