@@ -9,4 +9,4 @@ services:
       - ./qdrant_storage:/qdrant/storage:z
     restart: unless-stopped
     environment:
-      - QDRANT__SERVICE__ANALYTICS_ENABLED=false # Opzionale: disabilita telemetria
+      - QDRANT__SERVICE__ANALYTICS_ENABLED=true # telemetria
