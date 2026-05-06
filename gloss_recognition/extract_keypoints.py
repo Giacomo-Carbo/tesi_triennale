@@ -38,16 +38,13 @@ def extract_keypoints(results):
     pose = np.array([[res.x - ref_x, res.y - ref_y, res.z, res.visibility] 
                      for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(33*4)
     
-    face = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
-                     for res in results.face_landmarks.landmark]).flatten() if results.face_landmarks else np.zeros(468*3)
-    
     lh = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
                    for res in results.left_hand_landmarks.landmark]).flatten() if results.left_hand_landmarks else np.zeros(21*3)
     
     rh = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
                    for res in results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(21*3)
     
-    return np.concatenate([pose, face, lh, rh])
+    return np.concatenate([pose, lh, rh])
 
 
 #è essenzialmente un interpolazione che viene fatta sui keypoints estratti da media pipe, 
@@ -55,7 +52,7 @@ def extract_keypoints(results):
 def resample_sequence(sequence, target_frames=125):
     current_frames = len(sequence)
     if current_frames <= 1: # Protezione per sequenze troppo corte
-        return np.zeros((target_frames, 1662))
+        return np.zeros((target_frames, 258))
     sequence = np.array(sequence)
     x_old = np.linspace(0, 1, current_frames)
     x_new = np.linspace(0, 1, target_frames)
@@ -67,10 +64,6 @@ def resample_sequence(sequence, target_frames=125):
 #quindi se una sequenza è più corta di 100 frame, la riempio con zeri fino a raggiungere i 100 frame richiesti
 def uniform_lenght(sequence, target_frames=125):
     sequence = np.array(sequence)
-    
-    # Gestione dimensioni per evitare il ValueError precedente
-    if sequence.ndim == 1:
-        sequence = sequence.reshape(-1, 1662) if sequence.size > 0 else np.empty((0, 1662))
             
     current_frames = sequence.shape[0]
     
@@ -79,7 +72,7 @@ def uniform_lenght(sequence, target_frames=125):
         return None
 
     # Se è più corto, facciamo padding con zeri
-    padding = np.zeros((target_frames - current_frames, 1662))
+    padding = np.zeros((target_frames - current_frames, 258))
     return np.concatenate([sequence, padding], axis=0)
 
 

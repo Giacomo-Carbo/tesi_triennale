@@ -1,236 +1,264 @@
 <!DOCTYPE html>
 <html lang="it">
+
 <head>
-  <meta charset="utf-8">
+    <meta charset="utf-8">
 
-  <!-- MediaPipe -->
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
+    <!-- MediaPipe -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/holistic/holistic.js"></script>
 
-  <style>
-    body {
-      margin: 0;
-      background: #111;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      height: 100vh;
-      color: white;
-      font-family: sans-serif;
-    }
+    <style>
+        body {
+            margin: 0;
+            background: #111;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            color: white;
+            font-family: sans-serif;
+        }
 
-    .container {
-      position: relative;
-      width: 1280px;
-      height: 720px;
-    }
+        .container {
+            position: relative;
+            width: 1280px;
+            height: 720px;
+        }
 
-    video, canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 1280px;
-      height: 720px;
-    }
+        video,
+        canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1280px;
+            height: 720px;
+        }
 
-    video {
+        video {
 
-      z-index: 1;
-    }
+            z-index: 1;
+        }
 
-    canvas {
-              transform: scaleX(-1);
-      z-index: 2;
-      pointer-events: none;
-    }
+        canvas {
+            transform: scaleX(-1);
+            z-index: 2;
+            pointer-events: none;
+        }
 
-    button {
-      margin-top: 20px;
-      padding: 12px 20px;
-      font-size: 18px;
-      cursor: pointer;
-    }
-  </style>
+        button {
+            margin-top: 20px;
+            padding: 12px 20px;
+            font-size: 18px;
+            cursor: pointer;
+        }
+    </style>
 </head>
 
 <body>
 
-<div class="container">
-  <video class="input_video" autoplay playsinline></video>
-  <canvas class="output_canvas" width="1280" height="720"></canvas>
-</div>
+    <div class="container">
+        <video class="input_video" autoplay playsinline></video>
+        <canvas class="output_canvas" width="1280" height="720"></canvas>
+    </div>
 
-<button id="recordBtn">🎬 Registra 5 secondi</button>
+    <button id="recordBtn">🎬 Registra 5 secondi</button>
 
-<script type="module">
+    <script type="module">
 
-const videoElement = document.querySelector('.input_video');
-const canvasElement = document.querySelector('.output_canvas');
-const canvasCtx = canvasElement.getContext('2d');
-let recording = false;
-let frameCount = 0;
-const MAX_FRAMES = 125;
-let recordedData = [];
-
-function extractKeypoints(results) {
-    //rifrerimento del naso
-    let refX = 0;
-    let refY = 0;
-
-    if (results.poseLandmarks) {
-        refX = results.poseLandmarks[0].x;
-        refY = results.poseLandmarks[0].y;
-    }
-
-    const pose = results.poseLandmarks ? results.poseLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z, res.visibility]) : new Array(33 * 4).fill(0);
-
-    const face = results.faceLandmarks ? results.faceLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z]) : new Array(468 * 3).fill(0);
-
-    const lh = results.leftHandLandmarks ? results.leftHandLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z]) : new Array(21 * 3).fill(0);
-
-    const rh = results.rightHandLandmarks ? results.rightHandLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z]) : new Array(21 * 3).fill(0);
-
-    return [pose, face, lh, rh];
-
-}
+        const videoElement = document.querySelector('.input_video');
+        const canvasElement = document.querySelector('.output_canvas');
+        const canvasCtx = canvasElement.getContext('2d');
+        let recording = false;
+        let frameCount = 0;
+        const MAX_FRAMES = 125;
+        let recordedData = [];
 
 
-//disegna landmarks e connettori, e salva i dati se stiamo registrando, salva i daati nello stesso fromato di quelli che abbiamo usato per addestrare il modello
-function onResults(results) {
-  canvasCtx.save();
-  canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-  canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
+        function extractKeypoints(results) {
+            //rifrerimento del naso
+            let refX = 0;
+            let refY = 0;
 
-  if (results.poseLandmarks) {
-    drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
-      { color: '#00FF00', lineWidth: 4 });
-    drawLandmarks(canvasCtx, results.poseLandmarks,
-      { color: '#FF0000', lineWidth: 2 });
-  }
+            if (results.poseLandmarks) {
+                refX = results.poseLandmarks[0].x;
+                refY = results.poseLandmarks[0].y;
+            }
 
-  if (results.faceLandmarks) {
-    drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION,
-      { color: '#C0C0C0', lineWidth: 1 });
-  }
+            const pose = results.poseLandmarks ? results.poseLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z, res.visibility]) : new Array(33 * 4).fill(0);
 
-  if (results.leftHandLandmarks) {
-    drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS,
-      { color: '#CC0000', lineWidth: 4 });
-    drawLandmarks(canvasCtx, results.leftHandLandmarks,
-      { color: '#00FF00', lineWidth: 2 });
-  }
+           
 
-  if (results.rightHandLandmarks) {
-    drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS,
-      { color: '#00CC00', lineWidth: 4 });
-    drawLandmarks(canvasCtx, results.rightHandLandmarks,
-      { color: '#FF0000', lineWidth: 2 });
-  }
+            const lh = results.leftHandLandmarks ? results.leftHandLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z]) : new Array(21 * 3).fill(0);
 
-  // 📦 SALVATAGGIO DATI
-  if (recording && frameCount < MAX_FRAMES) {
-    recordedData.push(extractKeypoints(results));
+            const rh = results.rightHandLandmarks ? results.rightHandLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z]) : new Array(21 * 3).fill(0);
 
-    frameCount++;
+            // Concateniamo tutto in un unico array di 258 elementi
+            return pose.concat(lh, rh);
 
-    if (frameCount >= MAX_FRAMES) {
-      stopRecording();
-    }
-  }
-
-  canvasCtx.restore();
-}
+        }
 
 
-// ============================
-// MEDIAPIPE
-// ============================
-const holistic = new Holistic({
-  locateFile: (file) =>
-    `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
-});
+        //disegna landmarks e connettori, e salva i dati se stiamo registrando, salva i daati nello stesso fromato di quelli che abbiamo usato per addestrare il modello
+        function onResults(results) {
+            canvasCtx.save();
+            canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
 
-holistic.setOptions({
-  modelComplexity: 1,
-  smoothLandmarks: true,
-  enableSegmentation: false,
-  refineFaceLandmarks: true,
-  minDetectionConfidence: 0.5,
-  minTrackingConfidence: 0.5
-});
+            canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
 
-holistic.onResults(onResults);
+            if (results.poseLandmarks) {
+                drawConnectors(canvasCtx, results.poseLandmarks, POSE_CONNECTIONS,
+                    { color: '#00FF00', lineWidth: 4 });
+                drawLandmarks(canvasCtx, results.poseLandmarks,
+                    { color: '#FF0000', lineWidth: 2 });
+            }
 
+            if (results.faceLandmarks) {
+                drawConnectors(canvasCtx, results.faceLandmarks, FACEMESH_TESSELATION,
+                    { color: '#C0C0C0', lineWidth: 1 });
+            }
 
-// ============================
-// 25 FPS LIMIT
-// ============================
-let lastFrameTime = 0;
-const FRAME_INTERVAL = 1000 / 25;
+            if (results.leftHandLandmarks) {
+                drawConnectors(canvasCtx, results.leftHandLandmarks, HAND_CONNECTIONS,
+                    { color: '#CC0000', lineWidth: 4 });
+                drawLandmarks(canvasCtx, results.leftHandLandmarks,
+                    { color: '#00FF00', lineWidth: 2 });
+            }
 
+            if (results.rightHandLandmarks) {
+                drawConnectors(canvasCtx, results.rightHandLandmarks, HAND_CONNECTIONS,
+                    { color: '#00CC00', lineWidth: 4 });
+                drawLandmarks(canvasCtx, results.rightHandLandmarks,
+                    { color: '#FF0000', lineWidth: 2 });
+            }
 
-// ============================
-// CAMERA
-// ============================
-const camera = new Camera(videoElement, {
-  onFrame: async () => {
-    const now = performance.now();
+            // 📦 SALVATAGGIO DATI
+            if (recording && frameCount < MAX_FRAMES) {
+                recordedData.push(extractKeypoints(results));
 
-    if (now - lastFrameTime >= FRAME_INTERVAL) {
-      lastFrameTime = now;
-      await holistic.send({ image: videoElement });
-    }
-  },
-  width: 1280,
-  height: 720
-});
+                frameCount++;
 
-camera.start();
+                if (frameCount >= MAX_FRAMES) {
+                    stopRecording();
+                }
+            }
 
-
-// ============================
-// RECORD CONTROL
-// ============================
-const btn = document.getElementById("recordBtn");
-
-btn.onclick = () => {
-  if (recording) return;
-
-  recordedData = [];
-  frameCount = 0;
-  recording = true;
-
-  console.log("🎬 Recording started");
-};
+            canvasCtx.restore();
+        }
 
 
-function stopRecording() {
-  recording = false;
-  console.log("✅ Recording finished", recordedData);
-  
-  downloadJSON(recordedData);
-}
+        // ============================
+        // MEDIAPIPE
+        // ============================
+        const holistic = new Holistic({
+            locateFile: (file) =>
+                `https://cdn.jsdelivr.net/npm/@mediapipe/holistic/${file}`
+        });
+
+        holistic.setOptions({
+            modelComplexity: 1,
+            smoothLandmarks: true,
+            enableSegmentation: false,
+            refineFaceLandmarks: false,
+            minDetectionConfidence: 0.5,
+            minTrackingConfidence: 0.5
+        });
+
+        holistic.onResults(onResults);
 
 
-// ============================
-// DOWNLOAD JSON
-// ============================
-function downloadJSON(data) {
-  const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+        // ============================
+        // 25 FPS LIMIT
+        // ============================
+        let lastFrameTime = 0;
+        const FRAME_INTERVAL = 1000 / 25;
 
-  const a = document.createElement("a");
-  a.href = url;
-  a.download = "landmarks_5s_25fps.json";
-  a.click();
 
-  URL.revokeObjectURL(url);
-}
+        // ============================
+        // CAMERA
+        // ============================
+        const camera = new Camera(videoElement, {
+            onFrame: async () => {
+                const now = performance.now();
 
-</script>
+                if (now - lastFrameTime >= FRAME_INTERVAL) {
+                    lastFrameTime = now;
+                    await holistic.send({ image: videoElement });
+                }
+            },
+            width: 1280,
+            height: 720
+        });
+
+        camera.start();
+
+
+        // ============================
+        // RECORD CONTROL
+        // ============================
+        const btn = document.getElementById("recordBtn");
+
+        btn.onclick = () => {
+            if (recording) return;
+
+            recordedData = [];
+            frameCount = 0;
+            recording = true;
+
+            console.log("🎬 Recording started");
+        };
+
+
+        function stopRecording() {
+            recording = false;
+            console.log("✅ Recording finished", recordedData);
+
+            requestSign(recordedData);
+        }
+
+        async function requestSign(data) {
+            try {
+                const response = await fetch("http://localhost:8000/predict", {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json"
+                    },
+                    body: JSON.stringify({ sequence: data })
+                });
+
+                const result = await response.json();
+
+                if (response.ok) {
+                    alert(`Gloss predetta: ${result.predicted_gloss}`);
+                } else {
+                    alert(`Errore: ${result.detail || 'Errore durante la predizione'}`);
+                }
+            } catch (error) {
+                console.error("Errore nella richiesta:", error);
+                alert("Errore nella connessione al server.");
+            }
+        }
+
+        // ============================
+        // DOWNLOAD JSON
+        // ============================
+        function downloadJSON(data) {
+            const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
+            const url = URL.createObjectURL(blob);
+
+            const a = document.createElement("a");
+            a.href = url;
+            a.download = "landmarks_5s_25fps.json";
+            a.click();
+
+            URL.revokeObjectURL(url);
+        }
+
+    </script>
 
 </body>
+
 </html>
