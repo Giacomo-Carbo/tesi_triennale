@@ -8,7 +8,7 @@ from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalizat
 # --- 1. CONFIGURAZIONE PARAMETRI ---
 DATA_PATH = "MP_DATA_EMBEDDINGS"           # Cartella contenente le sottocartelle delle glosse
 BATCH_SIZE = 128                # Numero di triplette per ogni passo di addestramento
-SEQUENCE_LENGTH = 100           # Numero di frame fissi (interpolati)
+SEQUENCE_LENGTH = 125          # Numero di frame fissi (interpolati)
 FEATURE_SIZE = 1662             # Numero di coordinate MediaPipe (Pose+Face+Hands)
 EMBEDDING_SIZE = 256            # Dimensione del vettore finale (Embedding)
 EPOCHS = 80                     # Numero di cicli di addestramento
