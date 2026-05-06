@@ -8,7 +8,7 @@ import sys
 from tqdm import tqdm
 from scipy import interpolate
 from concurrent.futures import ProcessPoolExecutor
-
+from contextlib import contextmanager
 
 #DATASET_PATH = kagglehub.dataset_download("risangbaskoro/wlasl-processed")
 DATASET_PATH = "/Users/giacomocarbonara/.cache/kagglehub/datasets/risangbaskoro/wlasl-processed/versions/5"
@@ -51,7 +51,7 @@ def extract_keypoints(results):
 
 
 #è essenzialmente un interpolazione che viene fatta sui keypoints estratti da media pipe, 
-#in modo da avere sempre 100 frame per ogni video (5 secondi a 25 FPS)
+#in modo da avere sempre 125 frame per ogni video (5 secondi a 25 FPS)
 def resample_sequence(sequence, target_frames=125):
     current_frames = len(sequence)
     if current_frames <= 1: # Protezione per sequenze troppo corte
@@ -65,8 +65,7 @@ def resample_sequence(sequence, target_frames=125):
 #necessaria pk dato che nella piattaforma di learning dara una specie di finiestra 5 sec in cui l'utente potrà fare il
 #gesto se esso dura dimeno l'utnte può bloccare e riempirò di zeri i frame non "utilizzati"
 #quindi se una sequenza è più corta di 100 frame, la riempio con zeri fino a raggiungere i 100 frame richiesti
-#pk 4 sec? perche il gesto più lungo dura 4 secondi
-def uniform_lenght(sequence, target_frames=100):
+def uniform_lenght(sequence, target_frames=125):
     sequence = np.array(sequence)
     
     # Gestione dimensioni per evitare il ValueError precedente
@@ -84,33 +83,52 @@ def uniform_lenght(sequence, target_frames=100):
     return np.concatenate([sequence, padding], axis=0)
 
 
+
+@contextmanager
+def suppress_stdout_stderr():
+    """Redirige stdout e stderr a livello di sistema operativo (File Descriptor)"""
+    with open(os.devnull, 'w') as fnull:
+        # Salviamo gli ID dei descrittori originali
+        old_stdout_fd = os.dup(sys.stdout.fileno())
+        old_stderr_fd = os.dup(sys.stderr.fileno())
+        try:
+            # Sovrascriviamo a livello OS con il "null"
+            os.dup2(fnull.fileno(), sys.stdout.fileno())
+            os.dup2(fnull.fileno(), sys.stderr.fileno())
+            yield
+        finally:
+            # Ripristiniamo tutto alla fine
+            os.dup2(old_stdout_fd, sys.stdout.fileno())
+            os.dup2(old_stderr_fd, sys.stderr.fileno())
+            os.close(old_stdout_fd)
+            os.close(old_stderr_fd)
+
 #funzione che processa un singolo video, estrae i keypoints e salva il risultato in un file .npy
 #ho aggironato la funzione per usare il multiporcessing, in modo da processare più video in parallelo e velocizzare l'elaborazione 
 def worker_process_video(video_info):
-    sys.stdout = open(os.devnull, 'w')
-    sys.stderr = open(os.devnull, 'w')
-    video_path, output_file, target_length = video_info
-    
-    mp_holistic = mp.solutions.holistic
-    with mp_holistic.Holistic(static_image_mode=False, min_detection_confidence=0.5) as model:
-        cap = cv2.VideoCapture(video_path)
-        sequence = []
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
-            image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            image.flags.writeable = False
-            results = model.process(image)
-            sequence.append(extract_keypoints(results))
-            
-        cap.release()
-        sequence = uniform_lenght(sequence)
-        if (sequence is not None) and (len(sequence) > 0):
-            #resampled_data = resample_sequence(sequence, target_frames=target_length)
-            #np.save(output_file, resampled_data)
-            np.save(output_file, sequence) #salvo la sequenza originale senza resampling
-            return True
-    return False
+    with suppress_stdout_stderr():
+        video_path, output_file, target_length = video_info
+        
+        mp_holistic = mp.solutions.holistic
+        with mp_holistic.Holistic(static_image_mode=False, min_detection_confidence=0.5) as model:
+            cap = cv2.VideoCapture(video_path)
+            sequence = []
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret: break
+                image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+                image.flags.writeable = False
+                results = model.process(image)
+                sequence.append(extract_keypoints(results))
+                
+            cap.release()
+            sequence = uniform_lenght(sequence)
+            if (sequence is not None) and (len(sequence) > 0):
+                #resampled_data = resample_sequence(sequence, target_frames=target_length)
+                #np.save(output_file, resampled_data)
+                np.save(output_file, sequence) #salvo la sequenza originale senza resampling
+                return True
+        return False
 
 # --- MAIN ---
 
@@ -136,14 +154,15 @@ def main():
                 all_tasks.append((video_path, output_file, 100))
 
     # 2. Avviamo un UNICO Pool di processi per tutto il dataset
-    # Su M4 Pro posso spingermi ad usare un numero di worker pari ai core (es. 10 o 12)
+    # Su M4 Pro posso spingermi ad usare un numero di worker pari ai core (es. 10 o 12) (os.cpu_count() per dinamicamente)
     print(f"Totale video da processare: {len(all_tasks)}")
     
-    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
+    with ProcessPoolExecutor(max_workers=3) as executor:
         # Usiamo tqdm per vedere l'avanzamento globale reale
         list(tqdm(executor.map(worker_process_video, all_tasks), 
                   total=len(all_tasks), 
-                  desc="Elaborazione Globale"))
+                  desc="Elaborazione Globale")
+            )
 
     print("\nElaborazione completata!")
 
