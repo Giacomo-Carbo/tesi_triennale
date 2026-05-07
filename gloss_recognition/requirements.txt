@@ -17,3 +17,4 @@ qdrant_client
 tensorflowjs
 fastapi
 uvicorn
+setuptools<70.0.0

@@ -1,4 +1,3 @@
-import kagglehub
 import cv2
 import mediapipe as mp
 import numpy as np
@@ -10,127 +9,117 @@ from scipy import interpolate
 from concurrent.futures import ProcessPoolExecutor
 from contextlib import contextmanager
 
-#DATASET_PATH = kagglehub.dataset_download("risangbaskoro/wlasl-processed")
+# --- CONFIGURAZIONE PATH ---
 DATASET_PATH = "/Users/giacomocarbonara/.cache/kagglehub/datasets/risangbaskoro/wlasl-processed/versions/5"
 VIDEOS_PATH = os.path.join(DATASET_PATH, "videos")
 METADATA_PATH = os.path.join(DATASET_PATH, "WLASL_v0.3.json") 
 OUTPUT_PATH = "MP_DATA_EMBEDDINGS"
+TARGET_FRAMES = 125  # standardizzo a 125 frame per avere circa 5 secondi di video
 
 if not os.path.exists(OUTPUT_PATH):
     os.makedirs(OUTPUT_PATH)
 
-#uso media pipe per estrarre i keypoints da ogni video, e li concateno in un singolo array 
-#in oltre se in quel determinato frame non vengono rilevati keypoints, inserisco un array di zeri
-#la funzione extract_keypoints estrae i keypoints da un singolo frame, centrando le coordinate rispetto al naso (se rilevato)
-#in modo da rendere il modello più robusto a variazioni di posizione e distanza dell'utente rispetto alla camera
+# uso media pipe per estrarre i keypoints e questa volta aggiungo anche una normalizzazione basata sulla distanza tra le spalle
+# in questo modo, oltre a centrare tutto sul naso, rendo il modello immune al fatto che l'utente sia più o meno vicino alla camera
+# se non rileva la posa, uso un centro di default per evitare che il modello riceva dati inconsistenti
 def extract_keypoints(results):
-    # 1. Estraiamo il riferimento (Naso) se disponibile
-    # Il naso è il landmark 0 nella posa.
+    ref_x, ref_y = 0.5, 0.5
+    scale_factor = 1.0
+
     if results.pose_landmarks:
+        # il naso (indice 0) resta il mio punto di origine per la centratura
         ref_x = results.pose_landmarks.landmark[0].x
         ref_y = results.pose_landmarks.landmark[0].y
-    else:
-        ref_x, ref_y = 0, 0
+        
+        # calcolo la distanza tra le spalle per capire quanto l'utente è vicino
+        # dividendo le coordinate per questa distanza, i gesti avranno sempre la stessa proporzione
+        shoulder_l = results.pose_landmarks.landmark[11]
+        shoulder_r = results.pose_landmarks.landmark[12]
+        dist = np.sqrt((shoulder_l.x - shoulder_r.x)**2 + (shoulder_l.y - shoulder_r.y)**2)
+        if dist > 0:
+            scale_factor = dist
 
-    # 2. Estrazione con sottrazione del riferimento (Centratura)
-    # Sottraiamo ref_x dalle coordinate x (indice 0) e ref_y dalle coordinate y (indice 1)
-    
-    pose = np.array([[res.x - ref_x, res.y - ref_y, res.z, res.visibility] 
+    # estraggo i dati sottraendo il riferimento e dividendo per la scala
+    # se mediapipe non trova nulla in quel frame, inserisco i soliti array di zeri per non rompere la sequenza
+    pose = np.array([[(res.x - ref_x)/scale_factor, (res.y - ref_y)/scale_factor, res.z, res.visibility] 
                      for res in results.pose_landmarks.landmark]).flatten() if results.pose_landmarks else np.zeros(33*4)
     
-    lh = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
+    lh = np.array([[(res.x - ref_x)/scale_factor, (res.y - ref_y)/scale_factor, res.z] 
                    for res in results.left_hand_landmarks.landmark]).flatten() if results.left_hand_landmarks else np.zeros(21*3)
     
-    rh = np.array([[res.x - ref_x, res.y - ref_y, res.z] 
+    rh = np.array([[(res.x - ref_x)/scale_factor, (res.y - ref_y)/scale_factor, res.z] 
                    for res in results.right_hand_landmarks.landmark]).flatten() if results.right_hand_landmarks else np.zeros(21*3)
     
     return np.concatenate([pose, lh, rh])
 
-
-#è essenzialmente un interpolazione che viene fatta sui keypoints estratti da media pipe, 
-#in modo da avere sempre 125 frame per ogni video (5 secondi a 25 FPS)
-def resample_sequence(sequence, target_frames=125):
-    current_frames = len(sequence)
-    if current_frames <= 1: # Protezione per sequenze troppo corte
-        return np.zeros((target_frames, 258))
+# è l'interpolazione che serve a uniformare il dataset: ogni video deve avere esattamente 125 frame
+# rispetto al padding con zeri, questa tecnica è meglio perché "allunga" il gesto in modo fluido
+# evitando che l'LSTM veda dei salti o dei momenti di vuoto totale alla fine del video
+def resample_sequence(sequence, target_frames=TARGET_FRAMES):
     sequence = np.array(sequence)
+    current_frames = len(sequence)
+    
+    if current_frames <= 1:
+        return np.zeros((target_frames, 258))
+    
     x_old = np.linspace(0, 1, current_frames)
     x_new = np.linspace(0, 1, target_frames)
+    
     f = interpolate.interp1d(x_old, sequence, axis=0, kind='linear', fill_value="extrapolate")
     return f(x_new)
 
-#necessaria pk dato che nella piattaforma di learning dara una specie di finiestra 5 sec in cui l'utente potrà fare il
-#gesto se esso dura dimeno l'utnte può bloccare e riempirò di zeri i frame non "utilizzati"
-#quindi se una sequenza è più corta di 100 frame, la riempio con zeri fino a raggiungere i 100 frame richiesti
-def uniform_lenght(sequence, target_frames=125):
-    sequence = np.array(sequence)
-            
-    current_frames = sequence.shape[0]
-    
-    # Se il video è troppo lungo, lo scartiamo restituendo None
-    if current_frames > target_frames:
-        return None
-
-    # Se è più corto, facciamo padding con zeri
-    padding = np.zeros((target_frames - current_frames, 258))
-    return np.concatenate([sequence, padding], axis=0)
-
-
-
 @contextmanager
 def suppress_stdout_stderr():
-    """Redirige stdout e stderr a livello di sistema operativo (File Descriptor)"""
+    """Redirige stdout e stderr per evitare che i log di mediapipe intasino la console"""
     with open(os.devnull, 'w') as fnull:
-        # Salviamo gli ID dei descrittori originali
         old_stdout_fd = os.dup(sys.stdout.fileno())
         old_stderr_fd = os.dup(sys.stderr.fileno())
         try:
-            # Sovrascriviamo a livello OS con il "null"
             os.dup2(fnull.fileno(), sys.stdout.fileno())
             os.dup2(fnull.fileno(), sys.stderr.fileno())
             yield
         finally:
-            # Ripristiniamo tutto alla fine
             os.dup2(old_stdout_fd, sys.stdout.fileno())
             os.dup2(old_stderr_fd, sys.stderr.fileno())
             os.close(old_stdout_fd)
             os.close(old_stderr_fd)
 
-#funzione che processa un singolo video, estrae i keypoints e salva il risultato in un file .npy
-#ho aggironato la funzione per usare il multiporcessing, in modo da processare più video in parallelo e velocizzare l'elaborazione 
+# funzione che processa il video singolo, estrae i keypoints frame per frame e poi applica il resampling
+# ho aggiunto un check sulla lunghezza minima (5 frame) per scartare video che potrebbero essere corrotti
+# salvo il file in float32 così occupo meno spazio su disco mantenendo la precisione necessaria
 def worker_process_video(video_info):
+    video_path, output_file = video_info
+    
     with suppress_stdout_stderr():
-        video_path, output_file, target_length = video_info
-        
         mp_holistic = mp.solutions.holistic
         with mp_holistic.Holistic(static_image_mode=False, min_detection_confidence=0.5) as model:
             cap = cv2.VideoCapture(video_path)
             sequence = []
+            
             while cap.isOpened():
                 ret, frame = cap.read()
                 if not ret: break
+                
                 image = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-                image.flags.writeable = False
                 results = model.process(image)
                 sequence.append(extract_keypoints(results))
                 
             cap.release()
-            sequence = uniform_lenght(sequence)
-            if (sequence is not None) and (len(sequence) > 0):
-                #resampled_data = resample_sequence(sequence, target_frames=target_length)
-                #np.save(output_file, resampled_data)
-                np.save(output_file, sequence) #salvo la sequenza originale senza resampling
+            
+            if len(sequence) > 5:
+                resampled_data = resample_sequence(sequence)
+                np.save(output_file, resampled_data.astype(np.float32))
                 return True
         return False
 
 # --- MAIN ---
 
 def main():
-    print("Inizializzazione processo...")
+    print("Inizializzazione processo su M4 Pro...")
     with open(METADATA_PATH, "r") as f:
         metadata = json.load(f)
 
-    # 1. Raccogliamo TUTTI i task di tutti i video prima di iniziare
+    # raccolgo tutti i video che devono essere ancora processati
     all_tasks = []
     for entry in metadata:
         gloss = entry['gloss']
@@ -144,18 +133,15 @@ def main():
             output_file = os.path.join(gloss_dir, f"{video_id}.npy")
             
             if os.path.exists(video_path) and not os.path.exists(output_file):
-                all_tasks.append((video_path, output_file, 100))
+                all_tasks.append((video_path, output_file))
 
-    # 2. Avviamo un UNICO Pool di processi per tutto il dataset
-    # Su M4 Pro posso spingermi ad usare un numero di worker pari ai core (es. 10 o 12) (os.cpu_count() per dinamicamente)
     print(f"Totale video da processare: {len(all_tasks)}")
     
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        # Usiamo tqdm per vedere l'avanzamento globale reale
+    # uso un pool di 10 worker altrimenti in parallelo con mediapipe su M4 Pro rischia di saturare la CPU e rallentare tutto
+    with ProcessPoolExecutor(max_workers=os.cpu_count()) as executor:
         list(tqdm(executor.map(worker_process_video, all_tasks), 
                   total=len(all_tasks), 
-                  desc="Elaborazione Globale")
-            )
+                  desc="Elaborazione Globale"))
 
     print("\nElaborazione completata!")
 

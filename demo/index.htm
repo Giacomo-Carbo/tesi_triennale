@@ -35,15 +35,14 @@
             left: 0;
             width: 1280px;
             height: 720px;
+            transform: scaleX(-1);
         }
 
         video {
-
             z-index: 1;
         }
 
         canvas {
-            transform: scaleX(-1);
             z-index: 2;
             pointer-events: none;
         }
@@ -64,13 +63,17 @@
         <canvas class="output_canvas" width="1280" height="720"></canvas>
     </div>
 
-    <button id="recordBtn">🎬 Registra 5 secondi</button>
+    <button id="recordBtn">🎬 Registra</button>
+    <button id="stopBtn" disabled>⏹ Stop</button>
 
     <script type="module">
 
         const videoElement = document.querySelector('.input_video');
         const canvasElement = document.querySelector('.output_canvas');
         const canvasCtx = canvasElement.getContext('2d');
+        const recordBtn = document.getElementById("recordBtn");
+        const stopBtn = document.getElementById("stopBtn");
+
         let recording = false;
         let frameCount = 0;
         const MAX_FRAMES = 125;
@@ -82,19 +85,30 @@
             //rifrerimento del naso
             let refX = 0;
             let refY = 0;
+            let scale_factor = 1;
 
             if (results.poseLandmarks) {
                 refX = results.poseLandmarks[0].x;
                 refY = results.poseLandmarks[0].y;
+
+                //calcolo la distanza tra le spalle per capire quanto l'utente è vicino
+                //dividendo le coordinate per questa distanza, i gesti avranno sempre la stessa proporzione
+                let shoulder_l = results.poseLandmarks[11];
+                let shoulder_r = results.poseLandmarks[12];
+                
+                if (shoulder_l && shoulder_r) {
+                    let dist = Math.sqrt(Math.pow((shoulder_l.x - shoulder_r.x), 2) + Math.pow((shoulder_l.y - shoulder_r.y), 2));
+                    if (dist > 0) {
+                        scale_factor = dist;
+                    }
+                }
             }
 
-            const pose = results.poseLandmarks ? results.poseLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z, res.visibility]) : new Array(33 * 4).fill(0);
+            const pose = results.poseLandmarks ? results.poseLandmarks.flatMap(res => [(res.x - refX)/scale_factor, (res.y - refY)/scale_factor, (res.z), (res.visibility)]) : new Array(33 * 4).fill(0);
 
-           
+            const lh = results.leftHandLandmarks ? results.leftHandLandmarks.flatMap(res => [(res.x - refX)/scale_factor, (res.y - refY)/scale_factor, (res.z)]) : new Array(21 * 3).fill(0);
 
-            const lh = results.leftHandLandmarks ? results.leftHandLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z]) : new Array(21 * 3).fill(0);
-
-            const rh = results.rightHandLandmarks ? results.rightHandLandmarks.flatMap(res => [res.x - refX, res.y - refY, res.z]) : new Array(21 * 3).fill(0);
+            const rh = results.rightHandLandmarks ? results.rightHandLandmarks.flatMap(res => [(res.x - refX)/scale_factor, (res.y - refY)/scale_factor, (res.z)]) : new Array(21 * 3).fill(0);
 
             // Concateniamo tutto in un unico array di 258 elementi
             return pose.concat(lh, rh);
@@ -135,7 +149,7 @@
                     { color: '#FF0000', lineWidth: 2 });
             }
 
-            // 📦 SALVATAGGIO DATI
+            //SALVATAGGIO DATI
             if (recording && frameCount < MAX_FRAMES) {
                 recordedData.push(extractKeypoints(results));
 
@@ -199,24 +213,40 @@
         // ============================
         // RECORD CONTROL
         // ============================
-        const btn = document.getElementById("recordBtn");
 
-        btn.onclick = () => {
+        recordBtn.onclick = () => {
             if (recording) return;
 
             recordedData = [];
             frameCount = 0;
             recording = true;
+            recordBtn.disabled = true;
+            recordBtn.innerText = "⏺ Registrazione in corso...";
+            stopBtn.disabled = false;
 
             console.log("🎬 Recording started");
         };
 
+        stopBtn.onclick = () => {
+            stopRecording();
+        };
+
 
         function stopRecording() {
+            if (!recording) return;
+            
             recording = false;
-            console.log("✅ Recording finished", recordedData);
+            recordBtn.disabled = false;
+            recordBtn.innerText = "🎬 Registra";
+            stopBtn.disabled = true;
 
-            requestSign(recordedData);
+            console.log(`✅ Recording finished. Captured ${recordedData.length} frames.`, recordedData);
+
+            if (recordedData.length > 0) {
+                requestSign(recordedData);
+            } else {
+                alert("Nessun dato registrato.");
+            }
         }
 
         async function requestSign(data) {
