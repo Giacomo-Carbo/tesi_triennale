@@ -29,7 +29,7 @@ encoder = tf.keras.models.load_model(
     safe_mode=False
 )
 
-print("✅ Modello caricato")
+
 
 
 # --- REQUEST MODEL ---

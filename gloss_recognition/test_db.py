@@ -7,11 +7,11 @@ import random
 import json
 # --- 1. CONFIGURAZIONE ---
 client = QdrantClient(url="http://localhost:6333")
-MODEL_PATH = "final_lstm_encoder.h5"
+MODEL_PATH = "final_lstm_encoder.keras"
 DATA_PATH = "MP_DATA_EMBEDDINGS"
 
 
-encoder = tf.keras.models.load_model(MODEL_PATH, compile=False)
+encoder = tf.keras.models.load_model(MODEL_PATH, compile=False, safe_mode=False)
 
 def extract_embedding(file_path):
     data = np.load(file_path)
