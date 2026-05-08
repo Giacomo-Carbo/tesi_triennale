@@ -6,7 +6,7 @@ from typing import List
 import numpy as np
 import tensorflow as tf
 from scipy import interpolate
-# --- CONFIGURAZIONE ---
+
 app = FastAPI(title="Sign Language Search API")
 
 # CORS (per JS)
@@ -22,7 +22,7 @@ MODEL_PATH = "final_lstm_encoder.keras"
 SEQUENCE_LENGTH = 125
 FEATURE_SIZE = 258
 
-# --- LOAD MODEL ---
+#load del modello
 encoder = tf.keras.models.load_model(
     MODEL_PATH,
     compile=False,
@@ -49,14 +49,14 @@ def resample_sequence(sequence, target_frames=SEQUENCE_LENGTH):
     f = interpolate.interp1d(x_old, sequence, axis=0, kind='linear', fill_value="extrapolate")
     return f(x_new)
 
-# --- ENDPOINT ---
+
 @app.post("/predict")
 async def predict_gloss(request: KeypointsRequest):
     try:
        
         sequence = np.array(request.sequence, dtype=np.float32)
         
-        # Controllo che la dimensione delle feature sia corretta (258)
+        
         # Permettiamo invece una lunghezza della sequenza variabile (N frame)
         if sequence.ndim != 2 or sequence.shape[1] != FEATURE_SIZE:
             raise HTTPException(

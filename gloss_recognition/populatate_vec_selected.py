@@ -15,7 +15,7 @@ BATCH_SIZE = 500
 
 # --- 2. FILTRO TARGET ---
 # Inserisci qui solo i gloss che vuoi processare
-target_glosses = [ "home","look","name","see","thank you","what","where","who","you","love", "lion", "hello"]
+target_glosses = [ "home","look","name","see","thank you","what","where","who","you","love", "outside", "hello"]
 
 # Creazione collezione (con controllo se esiste già)
 if not client.collection_exists(COLLECTION_NAME):
