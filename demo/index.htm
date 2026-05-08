@@ -272,20 +272,7 @@
             }
         }
 
-        // ============================
-        // DOWNLOAD JSON
-        // ============================
-        function downloadJSON(data) {
-            const blob = new Blob([JSON.stringify(data)], { type: "application/json" });
-            const url = URL.createObjectURL(blob);
-
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = "landmarks_5s_25fps.json";
-            a.click();
-
-            URL.revokeObjectURL(url);
-        }
+ 
 
     </script>
 
