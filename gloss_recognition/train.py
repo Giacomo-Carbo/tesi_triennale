@@ -8,13 +8,13 @@ from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalizat
 
 # --- 1. CONFIGURAZIONE PARAMETRI ---
 DATA_PATH = "MP_DATA_EMBEDDINGS"
-BATCH_SIZE = 2048  # Aumentato a 1024 per sfruttare meglio la GPU, ma dipende dalla memoria disponibile
+BATCH_SIZE = 2048  # Aumentato a 1024 
 STEPS_PER_EPOCH = 200  # Aumentato per sfruttare bene il batch grande
 VAL_STEPS = 40         # Step per la validazione
 SEQUENCE_LENGTH = 125
-FEATURE_SIZE = 258
+FEATURE_SIZE = 258*3
 EMBEDDING_SIZE = 256
-EPOCHS = 100            # Aumentato, l'Early Stopping fermerà il training al momento giusto
+EPOCHS = 100            
 
 # --- GPU CHECK ---
 if tf.config.list_physical_devices('GPU'):
