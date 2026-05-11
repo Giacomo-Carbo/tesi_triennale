@@ -60,7 +60,7 @@ async def predict_gloss(request: KeypointsRequest):
         # Permettiamo invece una lunghezza della sequenza variabile (N frame)
         if sequence.ndim != 2 or sequence.shape[1] != FEATURE_SIZE:
             raise HTTPException(
-                status_code=400,
+                status_code=status.HTTP_400_BAD_REQUEST,
                 detail=f"Shape errata: atteso (N, {FEATURE_SIZE}), ricevuto {sequence.shape}"
             )
 
