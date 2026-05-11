@@ -3,14 +3,16 @@ import numpy as np
 import tensorflow as tf
 import random
 from tensorflow.keras.models import Model
-from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalization, Bidirectional
-
+from tensorflow.keras.layers import (
+    Input, Dense, Dropout, BatchNormalization, 
+    LayerNormalization, MultiHeadAttention, Conv1D, GlobalAveragePooling1D
+)
 
 # --- 1. CONFIGURAZIONE PARAMETRI ---
 DATA_PATH = "MP_DATA_EMBEDDINGS"
-BATCH_SIZE = 2048  # Aumentato a 1024 
-STEPS_PER_EPOCH = 200  # Aumentato per sfruttare bene il batch grande
-VAL_STEPS = 40         # Step per la validazione
+BATCH_SIZE = 512    
+STEPS_PER_EPOCH = 200   # Step per sfruttare bene il batch
+VAL_STEPS = 40          # Step per la validazione
 SEQUENCE_LENGTH = 125
 FEATURE_SIZE = 258
 EMBEDDING_SIZE = 256
@@ -25,7 +27,7 @@ else:
 
 # --- 2. GENERATORE TRIPLET OTTIMIZZATO (CON CACHE E SPLIT) ---
 class SignTripletGenerator(tf.keras.utils.Sequence):
-    def __init__(self, base_path, batch_size=BATCH_SIZE, steps=100, is_validation=False, split_ratio=0.90):
+    def __init__(self, base_path, batch_size=BATCH_SIZE, steps=100, is_validation=False, split_ratio=0.85):
         self.base_path = base_path
         self.batch_size = batch_size
         self.steps = steps
@@ -39,7 +41,7 @@ class SignTripletGenerator(tf.keras.utils.Sequence):
             if len(files) < 2:
                 continue
                 
-            # Split Train/Val 
+            # Split Train/Val deterministico
             split_idx = int(len(files) * split_ratio)
             if is_validation:
                 self.gloss_to_files[g] = files[split_idx:]
@@ -82,27 +84,54 @@ class SignTripletGenerator(tf.keras.utils.Sequence):
         return x, y
 
 
-# --- 3. ENCODER LSTM ---
-def build_lstm_encoder():
+# --- 3. ENCODER TRANSFORMER ---
+def transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
+    # Attention e Normalization
+    x = LayerNormalization(epsilon=1e-6)(inputs)
+    x = MultiHeadAttention(
+        key_dim=head_size, num_heads=num_heads, dropout=dropout
+    )(x, x)
+    x = Dropout(dropout)(x)
+    res = x + inputs
+
+    # Parte Feed Forward (Keras example style)
+    x = LayerNormalization(epsilon=1e-6)(res)
+    x = Conv1D(filters=ff_dim, kernel_size=1, activation="relu")(x)
+    x = Dropout(dropout)(x)
+    x = Conv1D(filters=inputs.shape[-1], kernel_size=1)(x)
+    return x + res
+
+def build_transformer_encoder(
+    head_size=256,
+    num_heads=4,
+    ff_dim=4,
+    num_transformer_blocks=4,
+    mlp_units=[512],
+    mlp_dropout=0.4,
+    dropout=0.25,
+):
     inputs = Input(shape=(SEQUENCE_LENGTH, FEATURE_SIZE))
+    x = inputs
+    
+    # Costruisco e metto in pila i blocchi Transformer
+    for _ in range(num_transformer_blocks):
+        x = transformer_encoder(x, head_size, num_heads, ff_dim, dropout)
 
-    x = Bidirectional(LSTM(128, return_sequences=True))(inputs)
-    x = BatchNormalization()(x)
-    x = Dropout(0.2)(x)
+    # Invece di ritornare tutte le sequenze, prendiamo la media globale per frame
+    x = GlobalAveragePooling1D()(x)
+    
+    for dim in mlp_units:
+        x = Dense(dim, activation="relu")(x)
+        x = Dropout(mlp_dropout)(x)
 
-    x = LSTM(256, return_sequences=False)(x)
-    x = BatchNormalization()(x)
-    x = Dropout(0.2)(x)
-
-    x = Dense(512, activation='relu')(x)
     x = Dense(EMBEDDING_SIZE, activation=None)(x)
 
-    # Normalizzazione L2 (necessaria per la cosine similarity)
+    # Normalizzazione per la cosine similarity
     outputs = tf.keras.layers.Lambda(
         lambda t: tf.nn.l2_normalize(t, axis=1)
     )(x)
 
-    return Model(inputs, outputs, name="LSTM_Encoder")
+    return Model(inputs, outputs, name="Transformer_Encoder")
 
 
 # --- 4. COSINE SIMILARITY LOSS ---
@@ -122,7 +151,8 @@ def triplet_cosine_loss(margin=0.2):
 
 
 # --- 5. MODELLO SIAMESE ---
-encoder = build_lstm_encoder()
+encoder = build_transformer_encoder()
+encoder.summary()  # Stampiamo il sommario per verificare i parametri del Transformer
 
 input_a = Input(shape=(SEQUENCE_LENGTH, FEATURE_SIZE))
 input_p = Input(shape=(SEQUENCE_LENGTH, FEATURE_SIZE))
@@ -135,8 +165,9 @@ emb_n = encoder(input_n)
 merged = tf.keras.layers.Concatenate(axis=1)([emb_a, emb_p, emb_n])
 siamese_model = Model(inputs=[input_a, input_p, input_n], outputs=merged)
 
-# Learning rate scalato per il batch da 1024
-optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.0008)  # Aumentato da 0.0005 a 0.0008 per batch più grande
+# Il transformer potrebbe beneficiare di un learning rate leggermente ridotto 
+# o di uno scheduler (warmup), ma manteniamo il tuo Adam per coerenza iniziale.
+optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.0008)
 
 siamese_model.compile(
     optimizer=optimizer,
@@ -157,9 +188,9 @@ siamese_model.fit(
     epochs=EPOCHS,
     callbacks=[
         tf.keras.callbacks.ModelCheckpoint(
-            "best_lstm_encoder.keras", # Aggiornato al formato keras e con nome LSTM
+            "best_transformer_encoder.keras", # Aggiornato il nome per riflettere l'architettura
             save_best_only=True,
-            monitor='val_loss',        # Monitoriamo la validazione
+            monitor='val_loss',
             mode='min'
         ),
         tf.keras.callbacks.EarlyStopping(
@@ -172,6 +203,6 @@ siamese_model.fit(
 
 
 # --- 7. SALVATAGGIO ---
-encoder.save("final_lstm_encoder1.keras")
+encoder.save("final_transformer_encoder1.keras")
 
 print("\nModello salvato con successo!")

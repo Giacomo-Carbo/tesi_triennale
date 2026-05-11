@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from qdrant_client import QdrantClient
 from pydantic import BaseModel
@@ -32,7 +32,7 @@ encoder = tf.keras.models.load_model(
 
 
 
-# --- REQUEST MODEL ---
+# modello di richiesta
 class KeypointsRequest(BaseModel):
     sequence: List[List[float]]  # [125][258]
 
@@ -91,7 +91,7 @@ async def predict_gloss(request: KeypointsRequest):
 
     except Exception as e:
         print(f"Errore durante la predizione: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(e))
 
 
 # --- RUN ---
