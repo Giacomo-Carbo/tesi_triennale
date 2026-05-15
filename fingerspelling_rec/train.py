@@ -42,6 +42,7 @@ def check_gpu():
     else:
         print("⚠️ GPU non trovata, uso della CPU.")
     print("-" * 30)
+    
 
 def merge_datasets(src_folders, dest_folder):
     dest_folder = Path(dest_folder)

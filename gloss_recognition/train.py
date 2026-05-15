@@ -10,11 +10,12 @@ from tensorflow.keras.layers import Input, LSTM, Dense, Dropout, BatchNormalizat
 DATA_PATH = "MP_DATA_EMBEDDINGS"
 BATCH_SIZE = 2048  # Aumentato a 1024 
 STEPS_PER_EPOCH = 200  # Aumentato per sfruttare bene il batch grande
-VAL_STEPS = 40         # Step per la validazione
+VAL_STEPS = 30         # Step per la validazione
 SEQUENCE_LENGTH = 125
 FEATURE_SIZE = 258
 EMBEDDING_SIZE = 256
 EPOCHS = 100            
+SPLIT_RATIO = 0.80       
 
 # --- GPU CHECK ---
 if tf.config.list_physical_devices('GPU'):
@@ -146,8 +147,8 @@ siamese_model.compile(
 
 # --- 6. TRAINING ---
 # Creazione dei due generatori distinti
-train_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=STEPS_PER_EPOCH, is_validation=False)
-val_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=VAL_STEPS, is_validation=True)
+train_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=STEPS_PER_EPOCH, is_validation=False, split_ratio=SPLIT_RATIO)
+val_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=VAL_STEPS, is_validation=True, split_ratio=SPLIT_RATIO)
 
 print("\nAvvio training...")
 

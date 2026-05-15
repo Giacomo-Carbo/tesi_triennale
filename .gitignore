@@ -17,10 +17,9 @@ __pycache__/
 # OS
 .DS_Store
 
-MP_DATA_EMBEDDINGS/
+
 exported_model/
 .venv/
 dataset/
 testset/
 qdrant_storage/
-MP_DATA_EMBEDDINGS_NO_INTERPOLATION/

@@ -1,0 +1,7 @@
+qdrant_client
+fastapi
+uvicorn
+setuptools<70.0.0
+scipy==1.12.0
+tensorflow==2.15.0
+tqdm

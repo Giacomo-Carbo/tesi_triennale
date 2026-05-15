@@ -4,19 +4,20 @@ import tensorflow as tf
 import random
 from tensorflow.keras.models import Model
 from tensorflow.keras.layers import (
-    Input, Dense, Dropout, BatchNormalization, 
-    LayerNormalization, MultiHeadAttention, Conv1D, GlobalAveragePooling1D
+    Input, Dense, Dropout, LayerNormalization, 
+    MultiHeadAttention, Conv1D, GlobalAveragePooling1D, Embedding
 )
 
 # --- 1. CONFIGURAZIONE PARAMETRI ---
 DATA_PATH = "MP_DATA_EMBEDDINGS"
-BATCH_SIZE = 512    
-STEPS_PER_EPOCH = 200   # Step per sfruttare bene il batch
-VAL_STEPS = 40          # Step per la validazione
+BATCH_SIZE = 1024 
+STEPS_PER_EPOCH = 80   
+VAL_STEPS = 40          
 SEQUENCE_LENGTH = 125
 FEATURE_SIZE = 258
 EMBEDDING_SIZE = 256
-EPOCHS = 100            
+EPOCHS = 100     
+SPLIT_RATIO = 0.80       
 
 # --- GPU CHECK ---
 if tf.config.list_physical_devices('GPU'):
@@ -24,14 +25,16 @@ if tf.config.list_physical_devices('GPU'):
 else:
     print("GPU non trovata")
 
+print("MPS Available: ", tf.config.list_physical_devices('MPS'))
 
-# --- 2. GENERATORE TRIPLET OTTIMIZZATO (CON CACHE E SPLIT) ---
+
+# --- 2. GENERATORE TRIPLET (CON CACHE MANTENUTA) ---
 class SignTripletGenerator(tf.keras.utils.Sequence):
-    def __init__(self, base_path, batch_size=BATCH_SIZE, steps=100, is_validation=False, split_ratio=0.85):
+    def __init__(self, base_path, batch_size=BATCH_SIZE, steps=100, is_validation=False, split_ratio=0.70):
         self.base_path = base_path
         self.batch_size = batch_size
         self.steps = steps
-        self.cache = {} # Mantiene i file in RAM dopo la prima lettura
+        self.cache = {} # Cache mantenuta in RAM
         
         all_glosse = [d for d in os.listdir(base_path) if os.path.isdir(os.path.join(base_path, d))]
         
@@ -94,7 +97,7 @@ def transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
     x = Dropout(dropout)(x)
     res = x + inputs
 
-    # Parte Feed Forward (Keras example style)
+    # Parte Feed Forward
     x = LayerNormalization(epsilon=1e-6)(res)
     x = Conv1D(filters=ff_dim, kernel_size=1, activation="relu")(x)
     x = Dropout(dropout)(x)
@@ -104,14 +107,22 @@ def transformer_encoder(inputs, head_size, num_heads, ff_dim, dropout=0):
 def build_transformer_encoder(
     head_size=256,
     num_heads=4,
-    ff_dim=4,
+    ff_dim=256,
     num_transformer_blocks=4,
     mlp_units=[512],
     mlp_dropout=0.4,
     dropout=0.25,
 ):
     inputs = Input(shape=(SEQUENCE_LENGTH, FEATURE_SIZE))
-    x = inputs
+    
+    # --- INTEGRAZIONE: Positional Encoding ---
+    positions = tf.range(start=0, limit=SEQUENCE_LENGTH, delta=1)
+    position_embeddings = Embedding(
+        input_dim=SEQUENCE_LENGTH, output_dim=FEATURE_SIZE
+    )(positions)
+    
+    x = inputs + position_embeddings
+    # -----------------------------------------
     
     # Costruisco e metto in pila i blocchi Transformer
     for _ in range(num_transformer_blocks):
@@ -152,7 +163,7 @@ def triplet_cosine_loss(margin=0.2):
 
 # --- 5. MODELLO SIAMESE ---
 encoder = build_transformer_encoder()
-encoder.summary()  # Stampiamo il sommario per verificare i parametri del Transformer
+encoder.summary()
 
 input_a = Input(shape=(SEQUENCE_LENGTH, FEATURE_SIZE))
 input_p = Input(shape=(SEQUENCE_LENGTH, FEATURE_SIZE))
@@ -165,9 +176,12 @@ emb_n = encoder(input_n)
 merged = tf.keras.layers.Concatenate(axis=1)([emb_a, emb_p, emb_n])
 siamese_model = Model(inputs=[input_a, input_p, input_n], outputs=merged)
 
-# Il transformer potrebbe beneficiare di un learning rate leggermente ridotto 
-# o di uno scheduler (warmup), ma manteniamo il tuo Adam per coerenza iniziale.
-optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=0.0008)
+optimizer = tf.keras.optimizers.AdamW(
+    learning_rate=0.001, 
+    weight_decay=0.004,  
+    beta_1=0.9,
+    beta_2=0.999
+)
 
 siamese_model.compile(
     optimizer=optimizer,
@@ -176,9 +190,8 @@ siamese_model.compile(
 
 
 # --- 6. TRAINING ---
-# Creazione dei due generatori distinti
-train_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=STEPS_PER_EPOCH, is_validation=False)
-val_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=VAL_STEPS, is_validation=True)
+train_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=STEPS_PER_EPOCH, is_validation=False, split_ratio=SPLIT_RATIO)
+val_gen = SignTripletGenerator(DATA_PATH, batch_size=BATCH_SIZE, steps=VAL_STEPS, is_validation=True, split_ratio=SPLIT_RATIO)
 
 print("\nAvvio training...")
 
@@ -188,7 +201,7 @@ siamese_model.fit(
     epochs=EPOCHS,
     callbacks=[
         tf.keras.callbacks.ModelCheckpoint(
-            "best_transformer_encoder.keras", # Aggiornato il nome per riflettere l'architettura
+            "best_transformer_encoder.keras",
             save_best_only=True,
             monitor='val_loss',
             mode='min'
